@@ -7,13 +7,17 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-const PORT = process.env.PORT || 3000;
-
 const HEADERS = {
     'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
     'Referer': 'https://vidsrc.to/'
 };
 
+// Root route to check backend health
+app.get('/', (req, res) => {
+    res.json({ success: true, message: 'Streamora Backend API is running' });
+});
+
+// Stream extraction endpoint
 app.get('/api/stream', async (req, res) => {
     try {
         const { tmdbId, type = 'movie', season = 1, episode = 1 } = req.query;
@@ -26,12 +30,14 @@ app.get('/api/stream', async (req, res) => {
             ? `https://vidsrc.to/embed/tv/${tmdbId}/${season}/${episode}`
             : `https://vidsrc.to/embed/movie/${tmdbId}`;
 
-        const response = await axios.get(embedUrl, { headers: HEADERS });
-        const $ = cheerio.load(response.data);
-        
-        let streamUrl = $('#player').attr('src') \vert{}\vert{} $('iframe').attr('src');
+        let streamUrl = embedUrl;
 
-        if (!streamUrl) {
+        try {
+            const response = await axios.get(embedUrl, { headers: HEADERS, timeout: 5000 });
+            const $ = cheerio.load(response.data);
+            const extracted = $('#player').attr('src') \vert{}\vert{} $('iframe').attr('src');
+            if (extracted) streamUrl = extracted;
+        } catch (e) {
             streamUrl = type === 'tv'
                 ? `https://vidlink.pro/tv/${tmdbId}/${season}/${episode}`
                 : `https://vidlink.pro/movie/${tmdbId}`;
@@ -54,17 +60,11 @@ app.get('/api/stream', async (req, res) => {
         });
 
     } catch (error) {
-        console.error('Error extracting stream:', error.message);
         return res.status(500).json({
             success: false,
-            message: 'Failed to extract video stream.'
+            message: error.message || 'Failed to extract video stream.'
         });
     }
 });
 
-app.listen(PORT, () => {
-    console.log(`Server running on port ${PORT}`);
-});
-
 module.exports = app;
-
